@@ -239,7 +239,7 @@ def tool(
             middleware=middleware,
         )
 
-    if function:
+    if function is not None:
         return make_tool(function)
     return make_tool
 

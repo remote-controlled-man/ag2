@@ -12,7 +12,9 @@ from pydantic import BaseModel
 
 from ag2 import Agent, ToolResult, tool
 from ag2.events import ModelResponse, ToolCallEvent, ToolCallsEvent
+from ag2.plugin import Plugin
 from ag2.testing import TestConfig
+from ag2.tools.types import FunctionTool, Toolkit
 
 DEFAULT_SCHEMA = {
     "function": {
@@ -165,3 +167,33 @@ async def test_concurrent_tool_execution() -> None:
     assert result.body == "result"
     assert started == 3
     assert sorted(finished) == ["a", "b", "c"]
+
+
+class Lookup(dict[str, str]):
+    def __call__(self, key: str) -> ToolResult:
+        return ToolResult(self.get(key, "missing"), final=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("registration", ["tool", "agent", "plugin", "toolkit"])
+@pytest.mark.parametrize("decorated", [False, True])
+@pytest.mark.parametrize("populated", [False, True])
+async def test_callable_tool_uses_presence_not_truthiness(registration: str, decorated: bool, populated: bool) -> None:
+    lookup = Lookup({"key": "value"} if populated else {})
+    plugin = Plugin()
+    toolkit = Toolkit()
+    agent = Agent(
+        "lookup-agent",
+        config=TestConfig(ToolCallEvent(name="lookup", arguments='{"key": "key"}')),
+    )
+    register = {"tool": tool, "agent": agent.tool, "plugin": plugin.tool, "toolkit": toolkit.tool}[registration]
+    registered = register(name="lookup")(lookup) if decorated else register(lookup, name="lookup")
+    assert isinstance(registered, FunctionTool)
+    if registration == "tool":
+        agent.add_tool(registered)
+    elif registration == "toolkit":
+        agent.add_tool(toolkit)
+
+    reply = await agent.ask("Look up key", plugins=[plugin])
+
+    assert reply.body == ("value" if populated else "missing")

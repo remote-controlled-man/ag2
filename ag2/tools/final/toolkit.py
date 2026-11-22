@@ -116,7 +116,7 @@ class Toolkit(Tool):
             self._add_tool(t)
             return t
 
-        if function:
+        if function is not None:
             return make_tool(function)
 
         return make_tool
